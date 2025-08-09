@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solenoid Magnetic Field Optimizer</title>
+    <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.js"></script>
+    <!-- Optional: Add a local fallback if CDN fails -->
+    <!-- <script>window.Chart || document.write('<script src="path/to/local/chart.min.js"><\/script>');</script> -->
     <style>
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
@@ -26,7 +29,7 @@
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.2);
         }
-        .mode-toggle, .record-button {
+        .mode-toggle, .record-button, .optimize-params {
             margin: 10px 0;
             text-align: center;
         }
@@ -56,6 +59,9 @@
             margin: 5px 0;
             border-radius: 4px;
             border: 1px solid #ccc;
+        }
+        input[type="checkbox"] {
+            margin-right: 5px;
         }
         .slider-value {
             font-size: 0.9em;
@@ -99,11 +105,17 @@
             padding: 15px;
             border-radius: 8px;
         }
-        #manualInputs, #sliderInputs {
+        #manualInputs, #sliderInputs, #optimizerInputs {
             display: none;
         }
-        #manualInputs.active, #sliderInputs.active {
+        #manualInputs.active, #sliderInputs.active, #optimizerInputs.active {
             display: block;
+        }
+        #chartError {
+            display: none;
+            color: red;
+            text-align: center;
+            margin: 10px 0;
         }
         @media (max-width: 600px) {
             .calculator {
@@ -124,10 +136,9 @@
         <div class="mode-toggle">
             <button onclick="toggleMode('manual')">Manual Input Mode</button>
             <button onclick="toggleMode('slider')">Slider Mode</button>
+            <button onclick="toggleMode('optimizer')">Optimizer Mode</button>
         </div>
-        <div class="record-button">
-            <button onclick="recordValues()">Record Value</button>
-        </div>
+        <div id="chartError">Error: Chart.js failed to load. Please check your internet connection or try again later.</div>
         <div id="manualInputs" class="input-container">
             <label for="turnsManual">Number of Turns (N):</label>
             <input type="number" id="turnsManual" min="10" max="1000" value="100" oninput="syncInputs('manual')">
@@ -142,7 +153,7 @@
             <label for="resistanceManual">Wire Resistance (Ω):</label>
             <input type="number" id="resistanceManual" min="0.1" max="20" step="0.1" value="5" oninput="syncInputs('manual')">
         </div>
-        <div id="sliderInputs" class="slider-container active">
+        <div id="sliderInputs" class="slider-container">
             <label for="turns">Number of Turns (N): <span class="slider-value" id="turnsValue">100</span></label>
             <input type="range" id="turns" min="10" max="1000" value="100" oninput="syncInputs('slider')">
             <label for="solenoidLength">Solenoid Length (m): <span class="slider-value" id="solenoidLengthValue">0.5</span></label>
@@ -155,6 +166,30 @@
             <input type="range" id="current" min="0.1" max="10" step="0.1" value="2" oninput="syncInputs('slider')">
             <label for="resistance">Wire Resistance (Ω): <span class="slider-value" id="resistanceValue">5</span></label>
             <input type="range" id="resistance" min="0.1" max="20" step="0.1" value="5" oninput="syncInputs('slider')">
+        </div>
+        <div id="optimizerInputs" class="slider-container">
+            <div class="optimize-params">
+                <label><input type="checkbox" id="optimizeB" checked onchange="updateOptimizer()"> Magnetic Field (B)</label>
+                <label><input type="checkbox" id="optimizeLayers" checked onchange="updateOptimizer()"> Number of Layers</label>
+                <label><input type="checkbox" id="optimizeThickness" checked onchange="updateOptimizer()"> Total Thickness</label>
+                <label><input type="checkbox" id="optimizeWireLength" checked onchange="updateOptimizer()"> Wire Length</label>
+                <label><input type="checkbox" id="optimizePower" checked onchange="updateOptimizer()"> Power</label>
+            </div>
+            <label for="turns">Number of Turns (N): <span class="slider-value" id="turnsValueOpt">100</span></label>
+            <input type="range" id="turns" min="10" max="1000" value="100" oninput="syncInputs('optimizer')">
+            <label for="solenoidLength">Solenoid Length (m): <span class="slider-value" id="solenoidLengthValueOpt">0.5</span></label>
+            <input type="range" id="solenoidLength" min="0.1" max="2" step="0.01" value="0.5" oninput="syncInputs('optimizer')">
+            <label for="wireThickness">Wire Thickness (mm): <span class="slider-value" id="wireThicknessValueOpt">1</span></label>
+            <input type="range" id="wireThickness" min="0.1" max="5" step="0.1" value="1" oninput="syncInputs('optimizer')">
+            <label for="radius">Solenoid Radius (m): <span class="slider-value" id="radiusValueOpt">0.05</span></label>
+            <input type="range" id="radius" min="0.01" max="0.5" step="0.01" value="0.05" oninput="syncInputs('optimizer')">
+            <label for="current">Current (I, Amperes): <span class="slider-value" id="currentValueOpt">2</span></label>
+            <input type="range" id="current" min="0.1" max="10" step="0.1" value="2" oninput="syncInputs('optimizer')">
+            <label for="resistance">Wire Resistance (Ω): <span class="slider-value" id="resistanceValueOpt">5</span></label>
+            <input type="range" id="resistance" min="0.1" max="20" step="0.1" value="5" oninput="syncInputs('optimizer')">
+        </div>
+        <div class="record-button">
+            <button onclick="recordValues()">Record Value</button>
         </div>
         <div id="result"></div>
         <div id="effectLog">
@@ -178,32 +213,41 @@
             </table>
         </div>
         <canvas id="solenoidCanvas" width="400" height="200"></canvas>
-        <div class="chart-container">
-            <canvas id="turnsChart"></canvas>
+        <div id="mainChartContainer" class="chart-container">
+            <canvas id="mainChart"></canvas>
         </div>
-        <div class="chart-container">
-            <canvas id="lengthChart"></canvas>
-        </div>
-        <div class="chart-container">
+        <div id="auxCharts" class="chart-container">
+            <canvas id="bChart"></canvas>
+            <canvas id="layersChart"></canvas>
             <canvas id="thicknessChart"></canvas>
-        </div>
-        <div class="chart-container">
-            <canvas id="radiusChart"></canvas>
-        </div>
-        <div class="chart-container">
-            <canvas id="currentChart"></canvas>
-        </div>
-        <div class="chart-container">
-            <canvas id="resistanceChart"></canvas>
+            <canvas id="wireLengthChart"></canvas>
+            <canvas id="powerChart"></canvas>
         </div>
     </div>
 
     <script>
-        let charts = {};
+        let mainChart, bChart, layersChart, thicknessChart, wireLengthChart, powerChart;
+        let currentMode = 'slider';
+
+        // Wait for Chart.js to load
+        function initCharts() {
+            if (typeof Chart === 'undefined') {
+                document.getElementById('chartError').style.display = 'block';
+                console.error('Chart.js is not loaded. Please ensure the CDN is accessible or use a local copy.');
+                return;
+            }
+            document.getElementById('chartError').style.display = 'none';
+            toggleMode('slider');
+            calculate();
+        }
 
         function toggleMode(mode) {
+            currentMode = mode;
             document.getElementById('manualInputs').classList.toggle('active', mode === 'manual');
             document.getElementById('sliderInputs').classList.toggle('active', mode === 'slider');
+            document.getElementById('optimizerInputs').classList.toggle('active', mode === 'optimizer');
+            document.getElementById('mainChartContainer').style.display = mode === 'optimizer' ? 'block' : 'none';
+            document.getElementById('auxCharts').style.display = mode === 'optimizer' ? 'block' : 'none';
             syncInputs(mode);
         }
 
@@ -216,6 +260,11 @@
                 document.getElementById(`${id}Manual`).value = value;
                 document.getElementById(id).value = value;
                 document.getElementById(`${id}Value`).textContent = value;
+                if (source !== 'optimizer') {
+                    document.getElementById(`${id}ValueOpt`).textContent = value;
+                } else {
+                    document.getElementById(`${id}Value`).textContent = value;
+                }
             });
             calculate();
         }
@@ -280,7 +329,9 @@
             `;
 
             drawSolenoid(numLayers, turnsPerLayer, solenoidLength, wireThickness, radius);
-            updateCharts(turns, solenoidLength, wireThickness, radius, current, resistance);
+            if (currentMode === 'optimizer') {
+                updateOptimizer();
+            }
         }
 
         function drawSolenoid(numLayers, turnsPerLayer, solenoidLength, wireThickness, radius) {
@@ -325,75 +376,132 @@
                 ctx.lineTo(startX + solenoidWidth + 30, y);
                 ctx.moveTo(startX + solenoidWidth, y - 6);
                 ctx.lineTo(startX + solenoidWidth + 30, y);
-                ctx.lineTo(startX + solenoidWidth, y + 6);
+                ctx.moveTo(startX + solenoidWidth, y + 6);
                 ctx.stroke();
             }
         }
 
-        function updateCharts(turns, solenoidLength, wireThickness, radius, current, resistance) {
+        function updateOptimizer() {
+            if (typeof Chart === 'undefined') {
+                document.getElementById('chartError').style.display = 'block';
+                return;
+            }
+            document.getElementById('chartError').style.display = 'none';
+
+            const turns = parseFloat(document.getElementById('turns').value);
+            const solenoidLength = parseFloat(document.getElementById('solenoidLength').value);
+            const wireThickness = parseFloat(document.getElementById('wireThickness').value) / 1000;
+            const radius = parseFloat(document.getElementById('radius').value);
+            const current = parseFloat(document.getElementById('current').value);
+            const resistance = parseFloat(document.getElementById('resistance').value);
+
+            const optimizeParams = [
+                { id: 'optimizeB', label: 'Magnetic Field (T)', color: '#3498db', yAxis: 'y1', key: 'B', format: v => v.toFixed(6) },
+                { id: 'optimizeLayers', label: 'Number of Layers', color: '#f1c40f', yAxis: 'y2', key: 'nL', format: v => v },
+                { id: 'optimizeThickness', label: 'Total Thickness (mm)', color: '#2ecc71', yAxis: 'y3', key: 'tT', format: v => v.toFixed(2) },
+                { id: 'optimizeWireLength', label: 'Wire Length (m)', color: '#f39c12', yAxis: 'y4', key: 'wL', format: v => v.toFixed(2) },
+                { id: 'optimizePower', label: 'Power (W)', color: '#e74c3c', yAxis: 'y5', key: 'p', format: v => v.toFixed(2) }
+            ].filter(param => document.getElementById(param.id).checked);
+
             const mu0 = 4 * Math.PI * 1e-7;
-            const params = [
-                { id: 'turns', range: Array.from({length: 20}, (_, i) => 10 + i * 50), label: 'Number of Turns', base: turns },
-                { id: 'solenoidLength', range: Array.from({length: 20}, (_, i) => 0.1 + i * 0.1), label: 'Solenoid Length (m)', base: solenoidLength },
-                { id: 'wireThickness', range: Array.from({length: 20}, (_, i) => 0.1 + i * 0.25), label: 'Wire Thickness (mm)', base: wireThickness * 1000 },
-                { id: 'radius', range: Array.from({length: 20}, (_, i) => 0.01 + i * 0.025), label: 'Solenoid Radius (m)', base: radius },
-                { id: 'current', range: Array.from({length: 20}, (_, i) => 0.1 + i * 0.5), label: 'Current (A)', base: current },
-                { id: 'resistance', range: Array.from({length: 20}, (_, i) => 0.1 + i * 1), label: 'Resistance (Ω)', base: resistance }
+            const turnsRange = Array.from({length: 20}, (_, i) => 10 + i * 50);
+            const data = turnsRange.map(t => {
+                const tPL = Math.floor(solenoidLength / wireThickness);
+                const nL = Math.ceil(t / tPL);
+                const B = mu0 * (t / solenoidLength) * current;
+                const tT = nL * wireThickness * 1000;
+                const wL = t * 2 * Math.PI * radius;
+                const p = current * current * resistance;
+                return { B, nL, tT, wL, p };
+            });
+
+            if (mainChart) mainChart.destroy();
+            mainChart = new Chart(document.getElementById('mainChart'), {
+                type: 'line',
+                data: {
+                    labels: turnsRange,
+                    datasets: optimizeParams.map(param => ({
+                        label: param.label,
+                        data: data.map(d => d[param.key]),
+                        borderColor: param.color,
+                        yAxisID: param.yAxis,
+                        fill: false
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    interaction: {
+                        mode: 'nearest',
+                        intersect: false
+                    },
+                    scales: {
+                        x: { title: { display: true, text: 'Number of Turns' } },
+                        y1: { display: optimizeParams.some(p => p.yAxis === 'y1'), type: 'linear', position: 'left', title: { display: true, text: 'Magnetic Field (T)' } },
+                        y2: { display: optimizeParams.some(p => p.yAxis === 'y2'), type: 'linear', position: 'right', title: { display: true, text: 'Number of Layers' }, grid: { display: false } },
+                        y3: { display: optimizeParams.some(p => p.yAxis === 'y3'), type: 'linear', position: 'left', title: { display: true, text: 'Total Thickness (mm)' }, grid: { display: false } },
+                        y4: { display: optimizeParams.some(p => p.yAxis === 'y4'), type: 'linear', position: 'right', title: { display: true, text: 'Wire Length (m)' }, grid: { display: false } },
+                        y5: { display: optimizeParams.some(p => p.yAxis === 'y5'), type: 'linear', position: 'left', title: { display: true, text: 'Power (W)' }, grid: { display: false } }
+                    },
+                    plugins: {
+                        legend: { position: 'top' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const param = optimizeParams[context.datasetIndex];
+                                    return `${param.label}: ${param.format(context.parsed.y)}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Auxiliary charts
+            const auxParams = [
+                { id: 'bChart', label: 'Magnetic Field (T)', key: 'B', color: '#3498db', format: v => v.toFixed(6) },
+                { id: 'layersChart', label: 'Number of Layers', key: 'nL', color: '#f1c40f', format: v => v },
+                { id: 'thicknessChart', label: 'Total Thickness (mm)', key: 'tT', color: '#2ecc71', format: v => v.toFixed(2) },
+                { id: 'wireLengthChart', label: 'Wire Length (m)', key: 'wL', color: '#f39c12', format: v => v.toFixed(2) },
+                { id: 'powerChart', label: 'Power (W)', key: 'p', color: '#e74c3c', format: v => v.toFixed(2) }
             ];
 
-            params.forEach(param => {
-                const data = param.range.map(val => {
-                    const t = param.id === 'turns' ? val : turns;
-                    const l = param.id === 'solenoidLength' ? val : solenoidLength;
-                    const wt = (param.id === 'wireThickness' ? val / 1000 : wireThickness);
-                    const r = param.id === 'radius' ? val : radius;
-                    const c = param.id === 'current' ? val : current;
-                    const res = param.id === 'resistance' ? val : resistance;
-
-                    const tPL = Math.floor(l / wt);
-                    const nL = Math.ceil(t / tPL);
-                    const B = mu0 * (t / l) * c;
-                    const tT = nL * wt;
-                    const wL = t * 2 * Math.PI * r;
-                    const p = c * c * res;
-
-                    return { B, nL, tT: tT * 1000, wL, p };
-                });
-
-                if (charts[param.id]) charts[param.id].destroy();
-                charts[param.id] = new Chart(document.getElementById(`${param.id}Chart`), {
+            auxParams.forEach(param => {
+                const chart = window[param.id];
+                if (chart) chart.destroy();
+                window[param.id] = new Chart(document.getElementById(param.id), {
                     type: 'line',
                     data: {
-                        labels: param.range,
-                        datasets: [
-                            { label: 'Magnetic Field (T)', data: data.map(d => d.B.toFixed(6)), borderColor: '#e74c3c', yAxisID: 'y1' },
-                            { label: 'Number of Layers', data: data.map(d => d.nL), borderColor: '#3498db', yAxisID: 'y2' },
-                            { label: 'Total Thickness (mm)', data: data.map(d => d.tT.toFixed(2)), borderColor: '#2ecc71', yAxisID: 'y3' },
-                            { label: 'Wire Length (m)', data: data.map(d => d.wL.toFixed(2)), borderColor: '#f1c40f', yAxisID: 'y4' },
-                            { label: 'Power (W)', data: data.map(d => d.p.toFixed(2)), borderColor: '#9b59b6', yAxisID: 'y5' }
-                        ]
+                        labels: turnsRange,
+                        datasets: [{
+                            label: param.label,
+                            data: data.map(d => d[param.key]),
+                            borderColor: param.color,
+                            fill: false
+                        }]
                     },
                     options: {
                         responsive: true,
                         scales: {
-                            x: { title: { display: true, text: param.label } },
-                            y1: { type: 'linear', position: 'left', title: { display: true, text: 'Magnetic Field (T)' }, grid: { display: false } },
-                            y2: { type: 'linear', position: 'right', title: { display: true, text: 'Number of Layers' }, grid: { display: false } },
-                            y3: { type: 'linear', position: 'right', title: { display: true, text: 'Total Thickness (mm)' }, grid: { display: false } },
-                            y4: { type: 'linear', position: 'left', title: { display: true, text: 'Wire Length (m)' }, grid: { display: false } },
-                            y5: { type: 'linear', position: 'right', title: { display: true, text: 'Power (W)' }, grid: { display: false } }
+                            x: { title: { display: true, text: 'Number of Turns' } },
+                            y: { title: { display: true, text: param.label } }
                         },
                         plugins: {
-                            legend: { position: 'top' }
+                            legend: { position: 'top' },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return `${param.label}: ${param.format(context.parsed.y)}`;
+                                    }
+                                }
+                            }
                         }
                     }
                 });
             });
         }
 
-        // Initial setup
-        toggleMode('slider');
-        calculate();
+        // Initialize after page load
+        window.onload = initCharts;
     </script>
 </body>
 </html>
