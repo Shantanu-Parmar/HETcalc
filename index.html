@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solenoid Magnetic Field Optimizer</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
@@ -26,7 +25,7 @@
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.2);
         }
-        .mode-toggle, .record-button {
+        .mode-toggle, .record-button, .optimize-params, .restrictions {
             margin: 10px 0;
             text-align: center;
         }
@@ -57,6 +56,9 @@
             border-radius: 4px;
             border: 1px solid #ccc;
         }
+        input[type="checkbox"] {
+            margin-right: 5px;
+        }
         .slider-value {
             font-size: 0.9em;
             color: #555;
@@ -66,6 +68,14 @@
             font-size: 1.1em;
             text-align: center;
             background: #ecf0f1;
+            padding: 10px;
+            border-radius: 6px;
+        }
+        #visualization {
+            margin: 20px 0;
+            text-align: center;
+            white-space: pre-wrap;
+            background: #fff;
             padding: 10px;
             border-radius: 6px;
         }
@@ -93,18 +103,28 @@
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        .chart-container {
+        #simpleGraphContainer {
             margin: 20px 0;
             background: #fff;
             padding: 15px;
             border-radius: 8px;
-        }
-        #manualInputs, #sliderInputs {
             display: none;
         }
-        #manualInputs.active, #sliderInputs.active {
+        #manualInputs, #sliderInputs, #optimizerInputs {
+            display: none;
+        }
+        #manualInputs.active, #sliderInputs.active, #optimizerInputs.active {
             display: block;
         }
+        #chartError {
+            display: none;
+            color: red;
+            text-align: center;
+            margin: 10px 0;
+        }
+        .green { color: green; }
+        .red { color: red; }
+        .nudge { font-style: italic; font-size: 0.9em; color: #e74c3c; }
         @media (max-width: 600px) {
             .calculator {
                 padding: 10px;
@@ -124,10 +144,9 @@
         <div class="mode-toggle">
             <button onclick="toggleMode('manual')">Manual Input Mode</button>
             <button onclick="toggleMode('slider')">Slider Mode</button>
+            <button onclick="toggleMode('optimizer')">Optimizer Mode</button>
         </div>
-        <div class="record-button">
-            <button onclick="recordValues()">Record Value</button>
-        </div>
+        <div id="chartError">Error: Graph failed to load. Please check your setup.</div>
         <div id="manualInputs" class="input-container">
             <label for="turnsManual">Number of Turns (N):</label>
             <input type="number" id="turnsManual" min="10" max="1000" value="100" oninput="syncInputs('manual')">
@@ -141,8 +160,20 @@
             <input type="number" id="currentManual" min="0.1" max="10" step="0.1" value="2" oninput="syncInputs('manual')">
             <label for="resistanceManual">Wire Resistance (Ω):</label>
             <input type="number" id="resistanceManual" min="0.1" max="20" step="0.1" value="5" oninput="syncInputs('manual')">
+            <div class="restrictions">
+                <label for="maxBManual">Max Magnetic Field (T):</label>
+                <input type="number" id="maxBManual" min="0" step="0.001" value="0.01" oninput="syncInputs('manual')">
+                <label for="maxLayersManual">Max Layers:</label>
+                <input type="number" id="maxLayersManual" min="1" value="10" oninput="syncInputs('manual')">
+                <label for="maxThicknessManual">Max Thickness (mm):</label>
+                <input type="number" id="maxThicknessManual" min="0" step="0.1" value="10" oninput="syncInputs('manual')">
+                <label for="maxWireLengthManual">Max Wire Length (m):</label>
+                <input type="number" id="maxWireLengthManual" min="0" step="0.1" value="50" oninput="syncInputs('manual')">
+                <label for="maxPowerManual">Max Power (W):</label>
+                <input type="number" id="maxPowerManual" min="0" step="0.1" value="20" oninput="syncInputs('manual')">
+            </div>
         </div>
-        <div id="sliderInputs" class="slider-container active">
+        <div id="sliderInputs" class="slider-container">
             <label for="turns">Number of Turns (N): <span class="slider-value" id="turnsValue">100</span></label>
             <input type="range" id="turns" min="10" max="1000" value="100" oninput="syncInputs('slider')">
             <label for="solenoidLength">Solenoid Length (m): <span class="slider-value" id="solenoidLengthValue">0.5</span></label>
@@ -155,8 +186,57 @@
             <input type="range" id="current" min="0.1" max="10" step="0.1" value="2" oninput="syncInputs('slider')">
             <label for="resistance">Wire Resistance (Ω): <span class="slider-value" id="resistanceValue">5</span></label>
             <input type="range" id="resistance" min="0.1" max="20" step="0.1" value="5" oninput="syncInputs('slider')">
+            <div class="restrictions">
+                <label for="maxB">Max Magnetic Field (T):</label>
+                <input type="number" id="maxB" min="0" step="0.001" value="0.01" oninput="syncInputs('slider')">
+                <label for="maxLayers">Max Layers:</label>
+                <input type="number" id="maxLayers" min="1" value="10" oninput="syncInputs('slider')">
+                <label for="maxThickness">Max Thickness (mm):</label>
+                <input type="number" id="maxThickness" min="0" step="0.1" value="10" oninput="syncInputs('slider')">
+                <label for="maxWireLength">Max Wire Length (m):</label>
+                <input type="number" id="maxWireLength" min="0" step="0.1" value="50" oninput="syncInputs('slider')">
+                <label for="maxPower">Max Power (W):</label>
+                <input type="number" id="maxPower" min="0" step="0.1" value="20" oninput="syncInputs('slider')">
+            </div>
+        </div>
+        <div id="optimizerInputs" class="slider-container">
+            <div class="optimize-params">
+                <label><input type="checkbox" id="optimizeB" checked onchange="updateOptimizer()"> Magnetic Field (B)</label>
+                <label><input type="checkbox" id="optimizeLayers" onchange="updateOptimizer()"> Number of Layers</label>
+                <label><input type="checkbox" id="optimizeThickness" onchange="updateOptimizer()"> Total Thickness</label>
+                <label><input type="checkbox" id="optimizeWireLength" onchange="updateOptimizer()"> Wire Length</label>
+                <label><input type="checkbox" id="optimizePower" onchange="updateOptimizer()"> Power</label>
+            </div>
+            <label for="turns">Number of Turns (N): <span class="slider-value" id="turnsValueOpt">100</span></label>
+            <input type="range" id="turns" min="10" max="1000" value="100" oninput="syncInputs('optimizer')">
+            <label for="solenoidLength">Solenoid Length (m): <span class="slider-value" id="solenoidLengthValueOpt">0.5</span></label>
+            <input type="range" id="solenoidLength" min="0.1" max="2" step="0.01" value="0.5" oninput="syncInputs('optimizer')">
+            <label for="wireThickness">Wire Thickness (mm): <span class="slider-value" id="wireThicknessValueOpt">1</span></label>
+            <input type="range" id="wireThickness" min="0.1" max="5" step="0.1" value="1" oninput="syncInputs('optimizer')">
+            <label for="radius">Solenoid Radius (m): <span class="slider-value" id="radiusValueOpt">0.05</span></label>
+            <input type="range" id="radius" min="0.01" max="0.5" step="0.01" value="0.05" oninput="syncInputs('optimizer')">
+            <label for="current">Current (I, Amperes): <span class="slider-value" id="currentValueOpt">2</span></label>
+            <input type="range" id="current" min="0.1" max="10" step="0.1" value="2" oninput="syncInputs('optimizer')">
+            <label for="resistance">Wire Resistance (Ω): <span class="slider-value" id="resistanceValueOpt">5</span></label>
+            <input type="range" id="resistance" min="0.1" max="20" step="0.1" value="5" oninput="syncInputs('optimizer')">
+            <div class="restrictions">
+                <label for="maxBOpt">Max Magnetic Field (T):</label>
+                <input type="number" id="maxBOpt" min="0" step="0.001" value="0.01" oninput="syncInputs('optimizer')">
+                <label for="maxLayersOpt">Max Layers:</label>
+                <input type="number" id="maxLayersOpt" min="1" value="10" oninput="syncInputs('optimizer')">
+                <label for="maxThicknessOpt">Max Thickness (mm):</label>
+                <input type="number" id="maxThicknessOpt" min="0" step="0.1" value="10" oninput="syncInputs('optimizer')">
+                <label for="maxWireLengthOpt">Max Wire Length (m):</label>
+                <input type="number" id="maxWireLengthOpt" min="0" step="0.1" value="50" oninput="syncInputs('optimizer')">
+                <label for="maxPowerOpt">Max Power (W):</label>
+                <input type="number" id="maxPowerOpt" min="0" step="0.1" value="20" oninput="syncInputs('optimizer')">
+            </div>
+        </div>
+        <div class="record-button">
+            <button onclick="recordValues()">Record Value</button>
         </div>
         <div id="result"></div>
+        <div id="visualization"></div>
         <div id="effectLog">
             <table>
                 <thead>
@@ -177,38 +257,31 @@
                 <tbody id="effectLogBody"></tbody>
             </table>
         </div>
-        <canvas id="solenoidCanvas" width="400" height="200"></canvas>
-        <div class="chart-container">
-            <canvas id="turnsChart"></canvas>
-        </div>
-        <div class="chart-container">
-            <canvas id="lengthChart"></canvas>
-        </div>
-        <div class="chart-container">
-            <canvas id="thicknessChart"></canvas>
-        </div>
-        <div class="chart-container">
-            <canvas id="radiusChart"></canvas>
-        </div>
-        <div class="chart-container">
-            <canvas id="currentChart"></canvas>
-        </div>
-        <div class="chart-container">
-            <canvas id="resistanceChart"></canvas>
+        <div id="simpleGraphContainer" class="chart-container">
+            <canvas id="simpleGraph" width="400" height="200"></canvas>
         </div>
     </div>
 
     <script>
-        let charts = {};
+        let currentMode = 'slider';
+
+        function initCharts() {
+            toggleMode('slider');
+            calculate();
+        }
 
         function toggleMode(mode) {
+            currentMode = mode;
             document.getElementById('manualInputs').classList.toggle('active', mode === 'manual');
             document.getElementById('sliderInputs').classList.toggle('active', mode === 'slider');
+            document.getElementById('optimizerInputs').classList.toggle('active', mode === 'optimizer');
+            document.getElementById('simpleGraphContainer').style.display = mode === 'optimizer' ? 'block' : 'none';
             syncInputs(mode);
         }
 
         function syncInputs(source) {
             const inputs = ['turns', 'solenoidLength', 'wireThickness', 'radius', 'current', 'resistance'];
+            const restrictions = ['maxB', 'maxLayers', 'maxThickness', 'maxWireLength', 'maxPower'];
             inputs.forEach(id => {
                 const value = source === 'manual' ?
                     document.getElementById(`${id}Manual`).value :
@@ -216,6 +289,23 @@
                 document.getElementById(`${id}Manual`).value = value;
                 document.getElementById(id).value = value;
                 document.getElementById(`${id}Value`).textContent = value;
+                if (source !== 'optimizer') {
+                    document.getElementById(`${id}ValueOpt`).textContent = value;
+                } else {
+                    document.getElementById(`${id}Value`).textContent = value;
+                }
+            });
+            restrictions.forEach(id => {
+                const value = source === 'manual' ?
+                    document.getElementById(`${id}Manual`).value :
+                    document.getElementById(id).value;
+                document.getElementById(`${id}Manual`).value = value || '';
+                document.getElementById(id).value = value || '';
+                if (source !== 'optimizer') {
+                    document.getElementById(`${id}Opt`).value = value || '';
+                } else {
+                    document.getElementById(`${id}`).value = value || '';
+                }
             });
             calculate();
         }
@@ -270,130 +360,126 @@
             const power = current * current * resistance;
             const wireLength = turns * 2 * Math.PI * radius;
 
+            const maxB = parseFloat(document.getElementById(currentMode === 'manual' ? 'maxBManual' : currentMode === 'slider' ? 'maxB' : 'maxBOpt').value) || Infinity;
+            const maxLayers = parseFloat(document.getElementById(currentMode === 'manual' ? 'maxLayersManual' : currentMode === 'slider' ? 'maxLayers' : 'maxLayersOpt').value) || Infinity;
+            const maxThickness = parseFloat(document.getElementById(currentMode === 'manual' ? 'maxThicknessManual' : currentMode === 'slider' ? 'maxThickness' : 'maxThicknessOpt').value) || Infinity;
+            const maxWireLength = parseFloat(document.getElementById(currentMode === 'manual' ? 'maxWireLengthManual' : currentMode === 'slider' ? 'maxWireLength' : 'maxWireLengthOpt').value) || Infinity;
+            const maxPower = parseFloat(document.getElementById(currentMode === 'manual' ? 'maxPowerManual' : currentMode === 'slider' ? 'maxPower' : 'maxPowerOpt').value) || Infinity;
+
+            const bClass = B > maxB ? 'red' : 'green';
+            const layersClass = numLayers > maxLayers ? 'red' : 'green';
+            const thicknessClass = (totalThickness * 1000) > maxThickness ? 'red' : 'green';
+            const wireLengthClass = wireLength > maxWireLength ? 'red' : 'green';
+            const powerClass = power > maxPower ? 'red' : 'green';
+            const nudge = (B > maxB || numLayers > maxLayers || (totalThickness * 1000) > maxThickness || wireLength > maxWireLength || power > maxPower) ?
+                '<div class="nudge">Consider adjusting inputs to meet restrictions.</div>' : '';
+
             document.getElementById('result').innerHTML = `
                 <strong>Results:</strong><br>
-                Magnetic Field (B): ${B.toFixed(6)} Tesla<br>
-                Number of Layers: ${numLayers}<br>
-                Total Layer Thickness: ${(totalThickness * 1000).toFixed(2)} mm<br>
-                Wire Length: ${wireLength.toFixed(2)} m<br>
-                Power Dissipation: ${power.toFixed(2)} Watts
+                Magnetic Field (B): <span class="${bClass}">${B.toFixed(6)}</span> Tesla<br>
+                Number of Layers: <span class="${layersClass}">${numLayers}</span><br>
+                Total Layer Thickness: <span class="${thicknessClass}">${(totalThickness * 1000).toFixed(2)}</span> mm<br>
+                Wire Length: <span class="${wireLengthClass}">${wireLength.toFixed(2)}</span> m<br>
+                Power Dissipation: <span class="${powerClass}">${power.toFixed(2)}</span> Watts
+                ${nudge}
             `;
 
-            drawSolenoid(numLayers, turnsPerLayer, solenoidLength, wireThickness, radius);
-            updateCharts(turns, solenoidLength, wireThickness, radius, current, resistance);
+            updateVisualization(turns, numLayers, turnsPerLayer, wireThickness);
+            if (currentMode === 'optimizer') {
+                updateOptimizer();
+            }
         }
 
-        function drawSolenoid(numLayers, turnsPerLayer, solenoidLength, wireThickness, radius) {
-            const canvas = document.getElementById('solenoidCanvas');
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            const width = canvas.width;
-            const height = canvas.height;
-            const solenoidWidth = width * 0.6;
-            const solenoidHeight = height * 0.8;
-            const startX = (width - solenoidWidth) / 2;
-            const startY = (height - solenoidHeight) / 2;
-
-            const gradient = ctx.createLinearGradient(startX, startY, startX, startY + solenoidHeight);
-            gradient.addColorStop(0, '#bdc3c7');
-            gradient.addColorStop(1, '#7f8c8d');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(startX, startY, solenoidWidth, solenoidHeight);
-
-            ctx.strokeStyle = '#d35400';
-            ctx.lineWidth = 3;
-            const layerSpacing = solenoidHeight / (numLayers + 1);
-            const turnSpacing = solenoidWidth / (turnsPerLayer + 1);
-
-            for (let layer = 0; layer < numLayers; layer++) {
-                for (let turn = 0; turn < turnsPerLayer; turn++) {
-                    const x = startX + turn * turnSpacing;
-                    const y = startY + (layer + 1) * layerSpacing;
-                    ctx.beginPath();
-                    ctx.arc(x, y, wireThickness * 750, 0, 2 * Math.PI);
-                    ctx.stroke();
+        function updateVisualization(turns, numLayers, turnsPerLayer, wireThickness) {
+            let vis = 'Solenoid Structure:\n';
+            const maxTurnsToShow = Math.min(turnsPerLayer, 10); // Limit to 10 turns for readability
+            for (let layer = 0; layer < numLayers && layer < 5; layer++) { // Limit to 5 layers
+                vis += 'Layer ' + (layer + 1) + ': ';
+                for (let turn = 0; turn < maxTurnsToShow; turn++) {
+                    vis += turn < turnsPerLayer ? 'O' : '-';
+                    if (wireThickness * 1000 > 1) vis += '-'.repeat(Math.floor(wireThickness * 1000) - 1); // Add spacing based on thickness
                 }
+                vis += '\n';
             }
-
-            ctx.strokeStyle = '#2980b9';
-            ctx.lineWidth = 2;
-            for (let i = 0; i < 4; i++) {
-                const y = startY + (i + 1) * (solenoidHeight / 5);
-                ctx.beginPath();
-                ctx.moveTo(startX - 30, y);
-                ctx.lineTo(startX + solenoidWidth + 30, y);
-                ctx.moveTo(startX + solenoidWidth, y - 6);
-                ctx.lineTo(startX + solenoidWidth + 30, y);
-                ctx.lineTo(startX + solenoidWidth, y + 6);
-                ctx.stroke();
-            }
+            if (numLayers > 5) vis += '... (and ' + (numLayers - 5) + ' more layers)\n';
+            if (turnsPerLayer > 10) vis += '... (and ' + (turnsPerLayer - 10) + ' more turns per layer)';
+            document.getElementById('visualization').textContent = vis;
         }
 
-        function updateCharts(turns, solenoidLength, wireThickness, radius, current, resistance) {
+        function updateOptimizer() {
+            const canvas = document.getElementById('simpleGraph');
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                document.getElementById('chartError').style.display = 'block';
+                return;
+            }
+            document.getElementById('chartError').style.display = 'none';
+
+            const turns = parseFloat(document.getElementById('turns').value);
+            const solenoidLength = parseFloat(document.getElementById('solenoidLength').value);
+            const wireThickness = parseFloat(document.getElementById('wireThickness').value) / 1000;
+            const radius = parseFloat(document.getElementById('radius').value);
+            const current = parseFloat(document.getElementById('current').value);
+            const resistance = parseFloat(document.getElementById('resistance').value);
+
             const mu0 = 4 * Math.PI * 1e-7;
-            const params = [
-                { id: 'turns', range: Array.from({length: 20}, (_, i) => 10 + i * 50), label: 'Number of Turns', base: turns },
-                { id: 'solenoidLength', range: Array.from({length: 20}, (_, i) => 0.1 + i * 0.1), label: 'Solenoid Length (m)', base: solenoidLength },
-                { id: 'wireThickness', range: Array.from({length: 20}, (_, i) => 0.1 + i * 0.25), label: 'Wire Thickness (mm)', base: wireThickness * 1000 },
-                { id: 'radius', range: Array.from({length: 20}, (_, i) => 0.01 + i * 0.025), label: 'Solenoid Radius (m)', base: radius },
-                { id: 'current', range: Array.from({length: 20}, (_, i) => 0.1 + i * 0.5), label: 'Current (A)', base: current },
-                { id: 'resistance', range: Array.from({length: 20}, (_, i) => 0.1 + i * 1), label: 'Resistance (Ω)', base: resistance }
-            ];
-
-            params.forEach(param => {
-                const data = param.range.map(val => {
-                    const t = param.id === 'turns' ? val : turns;
-                    const l = param.id === 'solenoidLength' ? val : solenoidLength;
-                    const wt = (param.id === 'wireThickness' ? val / 1000 : wireThickness);
-                    const r = param.id === 'radius' ? val : radius;
-                    const c = param.id === 'current' ? val : current;
-                    const res = param.id === 'resistance' ? val : resistance;
-
-                    const tPL = Math.floor(l / wt);
-                    const nL = Math.ceil(t / tPL);
-                    const B = mu0 * (t / l) * c;
-                    const tT = nL * wt;
-                    const wL = t * 2 * Math.PI * r;
-                    const p = c * c * res;
-
-                    return { B, nL, tT: tT * 1000, wL, p };
-                });
-
-                if (charts[param.id]) charts[param.id].destroy();
-                charts[param.id] = new Chart(document.getElementById(`${param.id}Chart`), {
-                    type: 'line',
-                    data: {
-                        labels: param.range,
-                        datasets: [
-                            { label: 'Magnetic Field (T)', data: data.map(d => d.B.toFixed(6)), borderColor: '#e74c3c', yAxisID: 'y1' },
-                            { label: 'Number of Layers', data: data.map(d => d.nL), borderColor: '#3498db', yAxisID: 'y2' },
-                            { label: 'Total Thickness (mm)', data: data.map(d => d.tT.toFixed(2)), borderColor: '#2ecc71', yAxisID: 'y3' },
-                            { label: 'Wire Length (m)', data: data.map(d => d.wL.toFixed(2)), borderColor: '#f1c40f', yAxisID: 'y4' },
-                            { label: 'Power (W)', data: data.map(d => d.p.toFixed(2)), borderColor: '#9b59b6', yAxisID: 'y5' }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: {
-                            x: { title: { display: true, text: param.label } },
-                            y1: { type: 'linear', position: 'left', title: { display: true, text: 'Magnetic Field (T)' }, grid: { display: false } },
-                            y2: { type: 'linear', position: 'right', title: { display: true, text: 'Number of Layers' }, grid: { display: false } },
-                            y3: { type: 'linear', position: 'right', title: { display: true, text: 'Total Thickness (mm)' }, grid: { display: false } },
-                            y4: { type: 'linear', position: 'left', title: { display: true, text: 'Wire Length (m)' }, grid: { display: false } },
-                            y5: { type: 'linear', position: 'right', title: { display: true, text: 'Power (W)' }, grid: { display: false } }
-                        },
-                        plugins: {
-                            legend: { position: 'top' }
-                        }
-                    }
-                });
+            const turnsRange = Array.from({length: 20}, (_, i) => 10 + i * 50);
+            const data = turnsRange.map(t => {
+                const n = t / solenoidLength;
+                const B = mu0 * n * current;
+                return { turns: t, B };
             });
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.beginPath();
+            ctx.strokeStyle = '#3498db';
+            ctx.lineWidth = 2;
+
+            // Scaling
+            const maxB = Math.max(...data.map(d => d.B));
+            const minTurns = Math.min(...data.map(d => d.turns));
+            const maxTurns = Math.max(...data.map(d => d.turns));
+            const xScale = canvas.width / (maxTurns - minTurns);
+            const yScale = canvas.height / (maxB * 1.1); // 10% padding
+
+            // Draw axes
+            ctx.beginPath();
+            ctx.strokeStyle = '#000';
+            ctx.moveTo(50, canvas.height - 20);
+            ctx.lineTo(50, 20);
+            ctx.lineTo(canvas.width - 20, canvas.height - 20);
+            ctx.stroke();
+
+            // Label axes
+            ctx.fillStyle = '#000';
+            ctx.fillText('Turns', canvas.width / 2, canvas.height - 5);
+            ctx.save();
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('Magnetic Field (T)', -canvas.height / 2, 30);
+            ctx.restore();
+
+            // Draw data points and line
+            ctx.beginPath();
+            ctx.moveTo(50, canvas.height - 20 - (data[0].B * yScale));
+            data.forEach((point, index) => {
+                const x = 50 + (point.turns - minTurns) * xScale;
+                const y = canvas.height - 20 - (point.B * yScale);
+                if (index === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+                ctx.fillStyle = '#3498db';
+                ctx.beginPath();
+                ctx.arc(x, y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.stroke();
+
+            // Legend
+            ctx.fillStyle = '#000';
+            ctx.fillText('B (T)', 60, 40);
         }
 
-        // Initial setup
-        toggleMode('slider');
-        calculate();
+        window.onload = initCharts;
     </script>
 </body>
 </html>
