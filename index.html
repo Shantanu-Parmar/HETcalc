@@ -104,7 +104,9 @@
             font-size: 0.7em;
         }
         canvas {
-            display: none;
+            display: block; /* Changed from 'none' to 'block' to make canvas visible */
+            margin: 10px auto; /* Center canvas and add spacing */
+            max-width: 100%; /* Ensure canvas is responsive */
         }
         .controls {
             text-align: center;
@@ -243,6 +245,12 @@
                         </table>
                     </div>
                 </div>
+                <!-- Start of added animation tab code -->
+                <div class="container" id="animation">
+                    <h3>Animation</h3>
+                    <canvas id="solenoidViz" width="600" height="400" style="border:1px solid #000; background: white;"></canvas>
+                </div>
+                <!-- End of added animation tab code -->
             </div>
         </div>
         <div class="equations">
@@ -265,6 +273,9 @@
     </div>
 
     <script>
+        let global_ntp = 0;
+        let global_nlayers = 0;
+
         function updateDynamicRange(sliderId, value) {
             const minValue = Math.max(value * 0.5, value - 50);
             const maxValue = Math.min(value * 1.5, value + 50);
@@ -328,7 +339,7 @@
         function toggleLinearMassDensity() {
             const dropdown = document.getElementById('linearMassDensity');
             const manual = document.getElementById('linearMassDensityManual');
-            if (manual.value && manual.value !== '') {
+            if (manual.value && manual.value !== '' ) {
                 dropdown.value = '';
                 document.getElementById('linearMassDensityValue').textContent = manual.value + ' g/cm³';
             } else if (dropdown.value) {
@@ -358,21 +369,20 @@
             const maxPower = parseFloat(document.getElementById('maxPower').value) || Infinity;
             const maxResistance = parseFloat(document.getElementById('maxResistance').value) || Infinity;
 
-
             const ntp = Math.floor((solenoidLength - (2 * linearOffset)) / effectiveDiameterM);
             const nlayers = Math.floor(((2 / Math.sqrt(3)) * ((maxOuterRadius - innerRadius) / effectiveDiameterM - 1)) + 1);
             const nT = ntp * nlayers;
 
             const lw = 2 * Math.PI * ntp * nlayers * (innerRadius + 0.5 * effectiveDiameterM + (Math.sqrt(3) / 4) * effectiveDiameterM * (nlayers - 1)); // m
-            const crossSectionArea = Math.PI * (bareDiameterM / 2) * (bareDiameterM / 2); // m²
+            const crossSectionArea = Math.PI * Math.pow((bareDiameterM / 2), 2); // m²
             const volume = crossSectionArea * lw; // m³
             const mw = linearMassDensity * volume * 1e6 / 1000; // kg (density g/cm³ * volume m³ * 10^6 cm³/m³ / 1000 = kg)
 
             const totalThickness = effectiveDiameter * (1 + ((Math.sqrt(3) / 2) * (nlayers - 1))) * 10; // mm
 
             const n = ntp / solenoidLength; // turns per meter
-            const u = 8.85418782 * 1e-12; // H/m
-            const B = u * n * current; // T
+            const mu0 = 4 * Math.PI * 1e-7; // H/m
+            const B = mu0 * n * current; // T
             const R = resistivity * lw / crossSectionArea; // Ω 
             const P = current * current * R; // W
 
@@ -394,11 +404,16 @@
                 Wire Length: <span class="${wireLengthClass}">${lw.toFixed(2)}</span> m<br>
                 Total Mass of Coil: ${mw.toFixed(2)} kg<br>
                 Total Thickness: <span class="${thicknessClass}">${totalThickness.toFixed(2)}</span> mm<br>
-                Magnetic Field: <span class="${bClass}">${B}</span> T<br>
+                Magnetic Field: <span class="${bClass}">${B.toFixed(10)}</span> T<br>
                 Resistance: <span class="${resistanceClass}">${R.toFixed(2)}</span> Ω<br>
                 Power: <span class="${powerClass}">${P.toFixed(2)}</span> W
                 ${nudge}
             `;
+
+            global_ntp = ntp;
+            global_nlayers = nlayers;
+
+            drawAnimation();
         }
 
         function recordValues() {
@@ -442,6 +457,142 @@
         }
 
         window.onload = syncInputs;
+
+        const canvas = document.getElementById('solenoidViz');
+        const ctx = canvas.getContext('2d');
+
+        function drawAnimation() {
+            const L_solenoid_cm = parseFloat(document.getElementById('solenoidLength').value) || 50;
+            const L_soloff_mm = parseFloat(document.getElementById('linearOffset').value) || 5;
+            const R_max_cm = parseFloat(document.getElementById('maxOuterRadius').value) || 10;
+            const R_min_cm = parseFloat(document.getElementById('innerRadius').value) || 5;
+            const bare_cm = parseFloat(document.getElementById('wireDiameter').value || document.getElementById('wireDiameterManual').value || 0.259);
+            const insul_cm = parseFloat(document.getElementById('wireInsulationManual').value) || 0.025;
+            const D_wire_cm = bare_cm + insul_cm;
+
+            const L_soloff_cm = L_soloff_mm / 10;
+
+            const display_turns = Math.round(global_ntp / 10) || 1;
+            const n_layers = global_nlayers;
+
+            // Cap for scaling
+            const L_for_scale = Math.min(L_solenoid_cm, 50);
+            const thickness_for_scale = Math.min(R_max_cm - R_min_cm, 100);
+
+            // Dynamic scale to fit canvas with caps
+            const scale_x = (canvas.width - 100) / L_for_scale;
+            const scale_y = (canvas.height - 100) / thickness_for_scale;
+            const scale = Math.min(scale_x, scale_y, 20);
+
+            const D_wire_px = D_wire_cm * scale;
+            const radius_px = D_wire_px / 2;
+            const layer_spacing_px = D_wire_px * (Math.sqrt(3) / 2);
+            let L_px = L_solenoid_cm * scale;
+            let thickness_px = (R_max_cm - R_min_cm) * scale;
+            const off_px = L_soloff_cm * scale;
+
+            const x_start = 50;
+            let x_end = x_start + L_px;
+            const y_bottom = canvas.height - 50;
+            let y_top = y_bottom - thickness_px;
+
+            // Clip if beyond canvas
+            if (x_end > canvas.width - 50) {
+                x_end = canvas.width - 50;
+            }
+            if (y_top < 50) {
+                y_top = 50;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw blue horizontal lines
+            ctx.strokeStyle = 'blue';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x_start, y_bottom);
+            ctx.lineTo(x_end, y_bottom);
+            ctx.moveTo(x_start, y_top);
+            ctx.lineTo(x_end, y_top);
+            ctx.stroke();
+
+            // Labels
+            ctx.fillStyle = 'black';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText('Rmin', x_start - 5, y_bottom + 4);
+            ctx.fillText('Rmax', x_start - 5, y_top + 4);
+
+            // Lsolenoid label
+            ctx.textAlign = 'center';
+            ctx.fillText('Lsolenoid', (x_start + x_end) / 2, y_bottom + 20);
+
+            // Coil thickness vertical line and label
+            const vert_x = x_end + 20;
+            ctx.beginPath();
+            ctx.moveTo(vert_x, y_top);
+            ctx.lineTo(vert_x, y_bottom);
+            ctx.stroke();
+
+            ctx.save();
+            ctx.translate(vert_x + 10, (y_top + y_bottom) / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.textAlign = 'center';
+            ctx.fillText('coil thickness', 0, 0);
+            ctx.restore();
+
+            // Striped pattern for copper texture
+            let patternCanvas = document.createElement('canvas');
+            patternCanvas.width = 10;
+            patternCanvas.height = 10;
+            let pctx = patternCanvas.getContext('2d');
+            pctx.fillStyle = '#B87333';
+            pctx.fillRect(0, 0, 10, 10);
+            pctx.strokeStyle = '#8B4513';
+            pctx.lineWidth = 1;
+            for (let i = 0; i < 10; i += 3) {
+                pctx.beginPath();
+                pctx.moveTo(0, i);
+                pctx.lineTo(10, i);
+                pctx.stroke();
+            }
+
+            const pattern = ctx.createPattern(patternCanvas, 'repeat');
+
+            // Draw circles in hexagonal packing
+            for (let layer = 0; layer < n_layers; layer++) {
+                const y = y_bottom - radius_px - layer * layer_spacing_px;
+                if (y - radius_px < y_top) continue; // Clip if beyond top
+
+                const shift = (layer % 2 === 1) ? radius_px : 0;
+
+                for (let turn = 0; turn < display_turns; turn++) {
+                    const x = x_start + off_px + radius_px + turn * D_wire_px + shift;
+                    if (x + radius_px > x_end) continue;
+
+                    ctx.beginPath();
+                    ctx.arc(x, y, radius_px, 0, 2 * Math.PI);
+                    ctx.fillStyle = pattern;
+                    ctx.fill();
+                    ctx.strokeStyle = '#A0522D';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // Add event listeners to update animation on input changes
+        document.getElementById('solenoidLength').addEventListener('input', syncInputs);
+        document.getElementById('linearOffset').addEventListener('input', syncInputs);
+        document.getElementById('maxOuterRadius').addEventListener('input', syncInputs);
+        document.getElementById('innerRadius').addEventListener('input', syncInputs);
+        document.getElementById('wireDiameter').addEventListener('change', syncInputs);
+        document.getElementById('wireDiameterManual').addEventListener('input', syncInputs);
+        document.getElementById('wireInsulationManual').addEventListener('input', syncInputs);
+
+        // Initial draw
+        syncInputs();
     </script>
+    
 </body>
 </html>
