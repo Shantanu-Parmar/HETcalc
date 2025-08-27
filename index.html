@@ -104,9 +104,9 @@
             font-size: 0.7em;
         }
         canvas {
-            display: block; /* Changed from 'none' to 'block' to make canvas visible */
-            margin: 10px auto; /* Center canvas and add spacing */
-            max-width: 100%; /* Ensure canvas is responsive */
+            display: block;
+            margin: 10px auto;
+            max-width: 100%;
         }
         .controls {
             text-align: center;
@@ -245,12 +245,10 @@
                         </table>
                     </div>
                 </div>
-                <!-- Start of added animation tab code -->
                 <div class="container" id="animation">
                     <h3>Animation</h3>
                     <canvas id="solenoidViz" width="600" height="400" style="border:1px solid #000; background: white;"></canvas>
                 </div>
-                <!-- End of added animation tab code -->
             </div>
         </div>
         <div class="equations">
@@ -263,7 +261,7 @@
             <p>V = A_cross * lw</p>
             <p>mw = ρ * V</p>
             <p>t_total = D_wire * (1 + (√3 / 2) * (n_layers - 1)) * 10</p>
-            <p>n = ntp / L_solenoid</p>
+            <p>n = n_T / L_solenoid</p>
             <p>B = μ₀ * n * I</p>
             <p>R = ρ * lw / A_cross</p>
             <p>P = I² * R</p>
@@ -380,7 +378,7 @@
 
             const totalThickness = effectiveDiameter * (1 + ((Math.sqrt(3) / 2) * (nlayers - 1))) * 10; // mm
 
-            const n = ntp / solenoidLength; // turns per meter
+            const n = (ntp * nlayers) / solenoidLength; // turns per meter
             const mu0 = 4 * Math.PI * 1e-7; // H/m
             const B = mu0 * n * current; // T
             const R = resistivity * lw / crossSectionArea; // Ω 
@@ -472,7 +470,7 @@
 
             const L_soloff_cm = L_soloff_mm / 10;
 
-            const display_turns = Math.round(global_ntp / 10) || 1;
+            const display_turns = global_ntp; // Use full number of turns
             const n_layers = global_nlayers;
 
             // Cap for scaling
@@ -593,6 +591,5 @@
         // Initial draw
         syncInputs();
     </script>
-    
 </body>
 </html>
